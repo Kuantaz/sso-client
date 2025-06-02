@@ -9,6 +9,7 @@ namespace Mds\SsoClient;
  * Fabián Aravena O. - faravena@desarrollosocial.cl
  * 2015-11-13
  * -------------------------------
+ * Optimizado por Kuantaz - 2024
  */
 class Sso
 {
@@ -18,48 +19,174 @@ class Sso
     const SSO_CODIGO_ESTADO_OK = 1;
     const SSO_CODIGO_ESTADO_ERROR = 0;
 
+    // Mensajes de error constantes
+    const ERROR_SSO_WSDL = 'Error SSO: Debe configurar el ambiente del SSO, variable "SSO_WSDL".';
+    const ERROR_SSO_AID = 'Error SSO: Debe configurar el ambiente del SSO, variable "SSO_AID".';
+    const ERROR_RUT_REQUERIDO = 'Error Funcion SSO: El RUT es requerido.';
+    const ERROR_NOMBRE_REQUERIDO = 'Error Funcion SSO: El Nombre es requerido.';
+    const ERROR_CORREO_REQUERIDO = 'Error Funcion SSO: El Correo es requerido.';
+    const ERROR_CLAVE_REQUERIDA = 'Error Funcion SSO: La Clave es requerida.';
+    const ERROR_TOKEN_REQUERIDO = 'Error Funcion SSO: El token es requerido.';
+    const ERROR_ROLES_REQUERIDOS = 'Error Funcion SSO: Los Roles son requeridos.';
+    const ERROR_APP_ROLES = 'Error Aplicación: Validar ID de aplicación del SSO, variable "SSO_AID", ya que no tiene ningún Rol asignado en SSO.';
+
+    /**
+     * Obtener configuración del SSO
+     *
+     * @param string $key
+     * @return string|null
+     */
+    private static function getConfig(string $key): ?string
+    {
+        return config("sso.{$key}") ?? env(strtoupper("SSO_{$key}"));
+    }
+
+    /**
+     * Validar si un valor está vacío
+     *
+     * @param mixed $value
+     * @return bool
+     */
+    private static function isEmpty($value): bool
+    {
+        return !isset($value) || empty($value);
+    }
+
+    /**
+     * Validar parámetros requeridos
+     *
+     * @param array $params
+     * @return object|null
+     */
+    private static function validateParams(array $params): ?object
+    {
+        foreach ($params as $param => $errorMessage) {
+            if (self::isEmpty($param)) {
+                return self::createErrorResponse($errorMessage);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Crear respuesta de error estándar
+     *
+     * @param string $message
+     * @return object
+     */
+    private static function createErrorResponse(string $message): object
+    {
+        $response = new \stdClass();
+        return self::respuesta($response, 'error', $message);
+    }
+
+    /**
+     * Crear respuesta exitosa estándar
+     *
+     * @param string $dataKey
+     * @param mixed $data
+     * @return object
+     */
+    private static function createSuccessResponse(string $dataKey, $data): object
+    {
+        $response = new \stdClass();
+        $response->{$dataKey} = $data;
+        $response->estado = 'ok';
+        return $response;
+    }
+
+    /**
+     * Obtener parámetros SOAP estándar
+     *
+     * @return array
+     */
+    private static function getSoapParams(): array
+    {
+        return [
+            'soap_version' => SOAP_1_2,
+            'compression' => SOAP_COMPRESSION_ACCEPT | SOAP_COMPRESSION_GZIP,
+            'encoding' => 'UTF-8',
+            'trace' => 1,
+            'exceptions' => true,
+            'cache_wsdl' => WSDL_CACHE_NONE,
+            'features' => SOAP_SINGLE_ELEMENT_ARRAYS
+        ];
+    }
+
+    /**
+     * Procesar respuesta del SSO
+     *
+     * @param object $respuesta
+     * @param string $property
+     * @param string $successField
+     * @param mixed $successValue
+     * @return object
+     */
+    private static function processSsoResponse(object $respuesta, string $property, string $successField, $successValue): object
+    {
+        if (isset($respuesta->{$property}->{$successField}) && $respuesta->{$property}->{$successField} == $successValue) {
+            $respuesta->estado = 'ok';
+            return $respuesta;
+        }
+
+        $errorMessage = isset($respuesta->{$property}->Detalle) 
+            ? 'Advertencia de SSO: ' . $respuesta->{$property}->Detalle 
+            : 'Advertencia de SSO.';
+
+        return self::respuesta($respuesta, 'error', $errorMessage);
+    }
+
+    /**
+     * Ejecutar operación SSO con manejo de errores
+     *
+     * @param callable $operation
+     * @return object
+     */
+    private static function executeSsoOperation(callable $operation): object
+    {
+        try {
+            return $operation();
+        } catch (\Exception $e) {
+            return self::error('Error SSO: ' . $e->getMessage());
+        }
+    }
+
     /**
      * Crear nueva instancia de SSO
      * 
      * @return object
      */
-    public static function newSSO()
+    public static function newSSO(): object
     {
-        $SSO_WSDL = config('sso.sso_wsdl') ?? env('SSO_WSDL');
-        if (isset($SSO_WSDL) && !empty($SSO_WSDL)) {
-            try {
-                $params = array(
-                    'soap_version' => SOAP_1_2,
-                    'compression' => SOAP_COMPRESSION_ACCEPT | SOAP_COMPRESSION_GZIP,
-                    'encoding' => 'UTF-8',
-                    'trace' => 1,
-                    'exceptions' => true,
-                    'cache_wsdl' => WSDL_CACHE_NONE,
-                    'features' => SOAP_SINGLE_ELEMENT_ARRAYS
-                );
-                $sso = new \SoapClient($SSO_WSDL, $params);
-                $sso->estado = 'ok';
-                $sso->estado_c = self::SSO_CODIGO_ESTADO_OK;
-                $sso->estado_msg = 'SSO conectado correctamente.';
-            } catch (\Exception $e) {
-                return self::error('Error SSO: ' . $e->getMessage());
+        return self::executeSsoOperation(function () {
+            $wsdl = self::getConfig('wsdl');
+            if (self::isEmpty($wsdl)) {
+                return self::error(self::ERROR_SSO_WSDL);
             }
-            
-            if ($sso->estado_c == self::SSO_CODIGO_ESTADO_OK) {
-                $AID = config('sso.sso_aid') ?? env('SSO_AID');
-                if (isset($AID) && !empty($AID)) {
-                    $sso->roles = isset($sso->ListarRolesAplicacion(array('AID' => $AID))->ListarRolesAplicacionResult) 
-                        ? $sso->ListarRolesAplicacion(array('AID' => $AID))->ListarRolesAplicacionResult 
-                        : null;
-                    if (isset($sso->roles->Roles) || count($sso->roles->Roles->Rol) > 0) {
-                        return $sso;
-                    }
-                    return self::error('Error Aplicación: Validar ID de aplicación del SSO, variable "SSO_AID", ya que no tiene ningún Rol asignado en SSO.');
-                }
-                return self::error('Error SSO: Debe configurar el ambiente del SSO, variable "SSO_AID".');
+
+            $sso = new \SoapClient($wsdl, self::getSoapParams());
+            $sso->estado = 'ok';
+            $sso->estado_c = self::SSO_CODIGO_ESTADO_OK;
+            $sso->estado_msg = 'SSO conectado correctamente.';
+
+            if ($sso->estado_c !== self::SSO_CODIGO_ESTADO_OK) {
+                return $sso;
             }
-        }
-        return self::error('Error SSO: Debe configurar el ambiente del SSO, variable "SSO_WSDL".');
+
+            $aid = self::getConfig('aid');
+            if (self::isEmpty($aid)) {
+                return self::error(self::ERROR_SSO_AID);
+            }
+
+            $rolesResult = $sso->ListarRolesAplicacion(['AID' => $aid])->ListarRolesAplicacionResult;
+            $sso->roles = $rolesResult ?? null;
+
+            if (!isset($sso->roles->Roles) || count($sso->roles->Roles->Rol) === 0) {
+                return self::error(self::ERROR_APP_ROLES);
+            }
+
+            return $sso;
+        });
     }
 
     /**
@@ -68,28 +195,33 @@ class Sso
      * @param string $rut
      * @return object
      */
-    public static function getUsuario($rut)
+    public static function getUsuario(string $rut): object
     {
-        try {
-            $respuesta = new \stdClass();
-            if (isset($rut) && !empty($rut)) {
-                $sso = self::newSSO();
-                if ($sso->estado_c == self::SSO_CODIGO_ESTADO_OK) {
-                    $AID = config('sso.sso_aid') ?? env('SSO_AID');
-                    $respuesta->usuario = $sso->BuscarUsuario(array('rut' => $rut, 'AID' => $AID))->BuscarUsuarioResult;
-                    if (isset($respuesta->usuario->Cantidad) && $respuesta->usuario->Cantidad == 1) {
-                        $respuesta->estado = 'ok';
-                        return $respuesta;
-                    }
-                } else {
-                    return $sso;
-                }
-                return self::respuesta($respuesta, 'error', isset($respuesta->usuario->Detalle) ? 'Advertencia de SSO: ' . $respuesta->usuario->Detalle : 'Advertencia de SSO.');
+        return self::executeSsoOperation(function () use ($rut) {
+            $validation = self::validateParams([$rut => self::ERROR_RUT_REQUERIDO]);
+            if ($validation) {
+                return $validation;
             }
-            return self::respuesta($respuesta, 'error', 'Error Funcion SSO: El RUT es requerido.');
-        } catch (\Exception $e) {
-            return self::error('Error SSO: ' . $e->getMessage());
-        }
+
+            $sso = self::newSSO();
+            if ($sso->estado_c !== self::SSO_CODIGO_ESTADO_OK) {
+                return $sso;
+            }
+
+            $response = new \stdClass();
+            $aid = self::getConfig('aid');
+            $response->usuario = $sso->BuscarUsuario(['rut' => $rut, 'AID' => $aid])->BuscarUsuarioResult;
+
+            if (isset($response->usuario->Cantidad) && $response->usuario->Cantidad === 1) {
+                return self::createSuccessResponse('usuario', $response->usuario);
+            }
+
+            $errorMessage = isset($response->usuario->Detalle) 
+                ? 'Advertencia de SSO: ' . $response->usuario->Detalle 
+                : 'Advertencia de SSO.';
+
+            return self::createErrorResponse($errorMessage);
+        });
     }
 
     /**
@@ -98,19 +230,22 @@ class Sso
      * @param string $token
      * @return object
      */
-    public static function getAutorizar($token)
+    public static function getAutorizar(string $token): object
     {
-        $respuesta = new \stdClass();
-        if (isset($token) && !empty($token)) {
-            $sso = self::newSSO();
-            $respuesta->autorizar = $sso->Autorizar(array('token' => $token))->AutorizarResult;
-            if (isset($respuesta->autorizar->Estado) && $respuesta->autorizar->Estado == 1) {
-                $respuesta->estado = 'ok';
-                return $respuesta;
-            }
-            return self::respuesta($respuesta, 'error', isset($respuesta->autorizar->Detalle) ? 'Advertencia de SSO: ' . $respuesta->autorizar->Detalle : 'Advertencia de SSO.');
+        $validation = self::validateParams([$token => self::ERROR_TOKEN_REQUERIDO]);
+        if ($validation) {
+            return $validation;
         }
-        return self::respuesta($respuesta, 'error', 'Error Funcion SSO: El token es requerido.');
+
+        $sso = self::newSSO();
+        if ($sso->estado_c !== self::SSO_CODIGO_ESTADO_OK) {
+            return $sso;
+        }
+
+        $response = new \stdClass();
+        $response->autorizar = $sso->Autorizar(['token' => $token])->AutorizarResult;
+
+        return self::processSsoResponse($response, 'autorizar', 'Estado', 1);
     }
 
     /**
@@ -123,51 +258,41 @@ class Sso
      * @param bool $habilitado
      * @return object
      */
-    public static function setCrearUsuario($rut, $nombre, $correo, $clave, $habilitado = true)
+    public static function setCrearUsuario(string $rut, string $nombre, string $correo, string $clave, bool $habilitado = true): object
     {
-        $respuesta = new \stdClass();
-        if (!isset($rut) || empty($rut)) {
-            return self::respuesta($respuesta, 'error', 'Error Funcion SSO: El RUT es requerido.');
-        }
-        if (!isset($nombre) || empty($nombre)) {
-            return self::respuesta($respuesta, 'error', 'Error Funcion SSO: El Nombre es requerido.');
-        }
-        if (!isset($correo) || empty($correo)) {
-            return self::respuesta($respuesta, 'error', 'Error Funcion SSO: El Correo es requerido.');
-        }
-        if (!isset($clave) || empty($clave)) {
-            return self::respuesta($respuesta, 'error', 'Error Funcion SSO: La Clave es requerida.');
-        }
+        $validation = self::validateParams([
+            $rut => self::ERROR_RUT_REQUERIDO,
+            $nombre => self::ERROR_NOMBRE_REQUERIDO,
+            $correo => self::ERROR_CORREO_REQUERIDO,
+            $clave => self::ERROR_CLAVE_REQUERIDA,
+        ]);
         
+        if ($validation) {
+            return $validation;
+        }
+
         $sso = self::newSSO();
-        if ($sso->estado_c == self::SSO_CODIGO_ESTADO_OK) {
-            $AID = config('sso.sso_aid') ?? env('SSO_AID');
-            $respuesta->crear = $sso->CrearUsuario(array(
-                'Usuario' => array(
-                    'RUT' => $rut,
-                    'Nombre' => trim($nombre),
-                    'Correo' => trim($correo),
-                    'Clave' => $clave,
-                    'Habilitado' => $habilitado
-                ),
-                'AID' => $AID
-            ))->CrearUsuarioResult;
-            
-            if (isset($respuesta->crear->Estado) && $respuesta->crear->Estado == 1) {
-                $respuesta->estado = 'ok';
-                return $respuesta;
-            }
-        } else {
+        if ($sso->estado_c !== self::SSO_CODIGO_ESTADO_OK) {
             return $sso;
         }
+
+        $response = new \stdClass();
+        $aid = self::getConfig('aid');
         
-        return self::respuesta(
-            $respuesta,
-            'error',
-            isset($respuesta->crear->Detalle) ?
-                'Advertencia de SSO: ' . $respuesta->crear->Detalle :
-                'Advertencia de SSO.'
-        );
+        $userData = [
+            'Usuario' => [
+                'RUT' => $rut,
+                'Nombre' => trim($nombre),
+                'Correo' => trim($correo),
+                'Clave' => $clave,
+                'Habilitado' => $habilitado
+            ],
+            'AID' => $aid
+        ];
+
+        $response->crear = $sso->CrearUsuario($userData)->CrearUsuarioResult;
+
+        return self::processSsoResponse($response, 'crear', 'Estado', 1);
     }
 
     /**
@@ -177,32 +302,27 @@ class Sso
      * @param array $roles
      * @return object
      */
-    public static function setAsignarRoles($rut, $roles = array())
+    public static function setAsignarRoles(string $rut, array $roles): object
     {
-        $respuesta = new \stdClass();
-        if (!isset($rut) || empty($rut)) {
-            return self::respuesta($respuesta, 'error', 'Error Funcion SSO: El RUT es requerido.');
-        }
-        if (!isset($roles) || empty($roles)) {
-            return self::respuesta($respuesta, 'error', 'Error Funcion SSO: Los Roles son requeridos.');
-        }
+        $validation = self::validateParams([
+            $rut => self::ERROR_RUT_REQUERIDO,
+            $roles => self::ERROR_ROLES_REQUERIDOS,
+        ]);
         
+        if ($validation) {
+            return $validation;
+        }
+
         $sso = self::newSSO();
-        $AID = config('sso.sso_aid') ?? env('SSO_AID');
-        $respuesta->asignar = $sso->AsignarRoles(array('rut' => $rut, 'roles' => $roles, 'AID' => $AID))->AsignarRolesResult;
-        
-        if (isset($respuesta->asignar->Estado) && $respuesta->asignar->Estado == 1) {
-            $respuesta->estado = 'ok';
-            return $respuesta;
+        if ($sso->estado_c !== self::SSO_CODIGO_ESTADO_OK) {
+            return $sso;
         }
-        
-        return self::respuesta(
-            $respuesta,
-            'error',
-            isset($respuesta->asignar->Detalle) ?
-                'Advertencia de SSO: ' . $respuesta->asignar->Detalle :
-                'Advertencia de SSO.'
-        );
+
+        $response = new \stdClass();
+        $aid = self::getConfig('aid');
+        $response->asignar = $sso->AsignarRoles(['rut' => $rut, 'roles' => $roles, 'AID' => $aid])->AsignarRolesResult;
+
+        return self::processSsoResponse($response, 'asignar', 'Estado', 1);
     }
 
     /**
@@ -211,29 +331,35 @@ class Sso
      * @param string $rut
      * @return object
      */
-    public static function listarRolesUsuario($rut)
+    public static function listarRolesUsuario(string $rut): object
     {
-        try {
-            $respuesta = new \stdClass();
-            if (isset($rut) && !empty($rut)) {
-                $sso = self::newSSO();
-                if ($sso->estado_c == self::SSO_CODIGO_ESTADO_OK) {
-                    $AID = config('sso.sso_aid') ?? env('SSO_AID');
-                    $ROL = config('sso.sso_rol') ?? env('SSO_ROL');
-                    $respuesta->usuario = $sso->ListarRolesUsuario(array('rut' => $rut, 'rol' => $ROL, 'AID' => $AID))->ListarRolesUsuarioResult;
-                    if (isset($respuesta->usuario->Cantidad) && $respuesta->usuario->Cantidad == 1) {
-                        $respuesta->estado = 'ok';
-                        return $respuesta;
-                    }
-                } else {
-                    return $sso;
-                }
-                return self::respuesta($respuesta, 'error', isset($respuesta->usuario->Detalle) ? 'Advertencia de SSO: ' . $respuesta->usuario->Detalle : 'Advertencia de SSO.');
+        return self::executeSsoOperation(function () use ($rut) {
+            $validation = self::validateParams([$rut => self::ERROR_RUT_REQUERIDO]);
+            if ($validation) {
+                return $validation;
             }
-            return self::respuesta($respuesta, 'error', 'Error Funcion SSO: El RUT es requerido.');
-        } catch (\Exception $e) {
-            return self::error('Error SSO: ' . $e->getMessage());
-        }
+
+            $sso = self::newSSO();
+            if ($sso->estado_c !== self::SSO_CODIGO_ESTADO_OK) {
+                return $sso;
+            }
+
+            $response = new \stdClass();
+            $aid = self::getConfig('aid');
+            $rol = self::getConfig('rol');
+            
+            $response->usuario = $sso->ListarRolesUsuario(['rut' => $rut, 'rol' => $rol, 'AID' => $aid])->ListarRolesUsuarioResult;
+
+            if (isset($response->usuario->Cantidad) && $response->usuario->Cantidad === 1) {
+                return self::createSuccessResponse('usuario', $response->usuario);
+            }
+
+            $errorMessage = isset($response->usuario->Detalle) 
+                ? 'Advertencia de SSO: ' . $response->usuario->Detalle 
+                : 'Advertencia de SSO.';
+
+            return self::createErrorResponse($errorMessage);
+        });
     }
 
     /**
@@ -242,28 +368,25 @@ class Sso
      * @param string $rut
      * @return object
      */
-    public static function eliminarUsuario($rut)
+    public static function eliminarUsuario(string $rut): object
     {
-        try {
-            $respuesta = new \stdClass();
-            if (isset($rut) && !empty($rut)) {
-                $sso = self::newSSO();
-                if ($sso->estado_c == self::SSO_CODIGO_ESTADO_OK) {
-                    $AID = config('sso.sso_aid') ?? env('SSO_AID');
-                    $respuesta->usuario = $sso->EliminarUsuario(array('rut' => $rut, 'AID' => $AID))->EliminarUsuarioResult;
-                    if (isset($respuesta->usuario->Estado) && $respuesta->usuario->Estado == 1) {
-                        $respuesta->estado = 'ok';
-                        return $respuesta;
-                    }
-                } else {
-                    return $sso;
-                }
-                return self::respuesta($respuesta, 'error', isset($respuesta->usuario->Detalle) ? 'Advertencia de SSO: ' . $respuesta->usuario->Detalle : 'Advertencia de SSO.');
+        return self::executeSsoOperation(function () use ($rut) {
+            $validation = self::validateParams([$rut => self::ERROR_RUT_REQUERIDO]);
+            if ($validation) {
+                return $validation;
             }
-            return self::respuesta($respuesta, 'error', 'Error Funcion SSO: El RUT es requerido.');
-        } catch (\Exception $e) {
-            return self::error('Error SSO: ' . $e->getMessage());
-        }
+
+            $sso = self::newSSO();
+            if ($sso->estado_c !== self::SSO_CODIGO_ESTADO_OK) {
+                return $sso;
+            }
+
+            $response = new \stdClass();
+            $aid = self::getConfig('aid');
+            $response->usuario = $sso->EliminarUsuario(['rut' => $rut, 'AID' => $aid])->EliminarUsuarioResult;
+
+            return self::processSsoResponse($response, 'usuario', 'Estado', 1);
+        });
     }
 
     /**
@@ -274,7 +397,7 @@ class Sso
      * @param string $msg
      * @return object
      */
-    public static function respuesta($respuesta, $estado, $msg)
+    public static function respuesta(object $respuesta, string $estado, string $msg): object
     {
         $respuesta->estado = $estado;
         $respuesta->estado_msg = $msg;
@@ -287,7 +410,7 @@ class Sso
      * @param string $msg
      * @return object
      */
-    public static function error($msg)
+    public static function error(string $msg): object
     {
         $sso = new \stdClass();
         $sso->estado = 'error';
