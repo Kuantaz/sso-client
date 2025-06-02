@@ -3,6 +3,7 @@
 namespace Mds\SsoClient;
 
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Foundation\AliasLoader;
 
 class SsoServiceProvider extends ServiceProvider
 {
@@ -17,6 +18,9 @@ class SsoServiceProvider extends ServiceProvider
         $this->publishes([
             __DIR__.'/../config/sso.php' => config_path('sso.php'),
         ], 'sso-config');
+
+        // Registrar alias automáticamente en Laravel 12
+        $this->registerAlias();
     }
 
     /**
@@ -36,6 +40,17 @@ class SsoServiceProvider extends ServiceProvider
         $this->app->singleton('sso', function ($app) {
             return new Sso();
         });
+    }
+
+    /**
+     * Registrar alias automáticamente
+     *
+     * @return void
+     */
+    protected function registerAlias()
+    {
+        $loader = AliasLoader::getInstance();
+        $loader->alias('Sso', \Mds\SsoClient\Facades\Sso::class);
     }
 
     /**

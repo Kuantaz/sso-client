@@ -7,12 +7,43 @@ Cliente SSO para integración con el sistema de autenticación del Ministerio de
 Instalar el paquete usando Composer:
 
 ```bash
-composer require mds/sso-client
+composer require kuantaz/sso-client
 ```
 
 ### Laravel
 
-El paquete se registra automáticamente en Laravel 5.5+ gracias al autodiscovery. Para versiones anteriores, agrega el service provider manualmente:
+El paquete se registra automáticamente en Laravel 5.5+ gracias al autodiscovery.
+
+#### Laravel 12+
+
+En Laravel 12, el alias se registra automáticamente mediante el Service Provider. Si necesitas configurarlo manualmente, agrega el alias en tu archivo `bootstrap/app.php`:
+
+```php
+<?php
+
+use Illuminate\Foundation\Application;
+
+return Application::configure(basePath: dirname(__DIR__))
+    ->withRouting(
+        web: __DIR__.'/../routes/web.php',
+        commands: __DIR__.'/../routes/console.php',
+        health: '/up',
+    )
+    ->withMiddleware(function (Middleware $middleware) {
+        //
+    })
+    ->withExceptions(function (Exceptions $exceptions) {
+        //
+    })
+    ->withAliases([
+        'Sso' => Mds\SsoClient\Facades\Sso::class,
+    ])
+    ->create();
+```
+
+#### Laravel 5.1 - 11
+
+Para versiones anteriores a Laravel 12, agrega el service provider y alias manualmente:
 
 ```php
 // config/app.php
@@ -115,9 +146,9 @@ $respuesta = (object) [
 
 ## Requisitos
 
--   PHP >= 7.4
--   Extensión SOAP de PHP
--   Laravel 5.1+ (opcional, para usar con Laravel)
+- PHP >= 7.4
+- Extensión SOAP de PHP
+- Laravel 5.1+ (opcional, para usar con Laravel)
 
 ## Testing
 
@@ -135,8 +166,8 @@ Este paquete es open-source bajo la [Licencia MIT](LICENSE).
 
 ## Créditos
 
--   **Fabián Aravena O.** - _Autor original_ - faravena@desarrollosocial.cl
--   Ministerio de Desarrollo Social de Chile
+- **Fabián Aravena O.** - _Autor original_ - faravena@desarrollosocial.cl
+- Ministerio de Desarrollo Social de Chile
 
 ## Soporte
 
