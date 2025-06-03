@@ -6,18 +6,14 @@ namespace Mds\SsoClient;
  * Funciones SSO del Ministerio de Desarrollo Social
  * para Laravel
  * -------------------------------
- * Fabián Aravena O. - faravena@desarrollosocial.cl
- * 2015-11-13
+ * Kuantaz - 2025
  * -------------------------------
- * Optimizado por Kuantaz - 2024
  */
 class Sso
 {
-    const SSO_ROL_ADMIN = 1;
-    const SSO_ROL_REVISOR = 2;
-    const SSO_ROL_OPERADOR = 3;
     const SSO_CODIGO_ESTADO_OK = 1;
     const SSO_CODIGO_ESTADO_ERROR = 0;
+    const SSO_CODIGO_ESTADO_ADVERTENCIA = 2;
 
     // Mensajes de error constantes
     const ERROR_SSO_WSDL = 'Error SSO: Debe configurar el ambiente del SSO, variable "SSO_WSDL".';
