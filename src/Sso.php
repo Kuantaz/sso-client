@@ -302,13 +302,15 @@ class Sso
     {
         $validation = self::validateParams([
             $rut => self::ERROR_RUT_REQUERIDO,
-            $roles => self::ERROR_ROLES_REQUERIDOS,
         ]);
         
         if ($validation) {
             return $validation;
         }
-
+        // Validar que el array de roles no esté vacío
+        if (empty($roles)) {
+            return self::createErrorResponse(self::ERROR_ROLES_REQUERIDOS);
+        }
         $sso = self::newSSO();
         if ($sso->estado_c !== self::SSO_CODIGO_ESTADO_OK) {
             return $sso;
@@ -342,11 +344,10 @@ class Sso
 
             $response = new \stdClass();
             $aid = self::getConfig('aid');
-            $rol = self::getConfig('rol');
             
-            $response->usuario = $sso->ListarRolesUsuario(['rut' => $rut, 'rol' => $rol, 'AID' => $aid])->ListarRolesUsuarioResult;
+            $response->usuario = $sso->ListarRolesUsuario(['rut' => $rut, 'AID' => $aid])->ListarRolesUsuarioResult;
 
-            if (isset($response->usuario->Cantidad) && $response->usuario->Cantidad === 1) {
+            if (isset($response->usuario->Roles)) {
                 return self::createSuccessResponse('usuario', $response->usuario);
             }
 
