@@ -345,7 +345,7 @@ class Sso
             $response = new \stdClass();
             $aid = self::getConfig('aid');
             
-            $response->usuario = $sso->ListarRolesUsuario(['rut' => $rut, 'AID' => $aid])->ListarRolesUsuarioResult;
+            $response->usuario = $sso->ListarRolesUsuario(['rut' => $rut,'rol'=> null, 'AID' => $aid])->ListarRolesUsuarioResult;
 
             if (isset($response->usuario->Roles)) {
                 return self::createSuccessResponse('usuario', $response->usuario);
